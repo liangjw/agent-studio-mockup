@@ -16,7 +16,7 @@ interface ChatInterfaceProps {
 interface ChatSession {
   messages: Array<{ role: string; content: string }>;
   systemInstruction: string;
-  sendMessage: (input: { message: string }) => Promise<{ text?: string; functionCalls?: Array<{ name: string; args: Record<string, unknown> }> }>;
+  sendMessage: (input: { message: string }) => Promise<{ text?: string; suggestions?: string[]; functionCalls?: Array<{ name: string; args: Record<string, unknown> }> }>;
 }
 
 export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose, editingAgent }: ChatInterfaceProps) {
@@ -84,7 +84,8 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
               id: Date.now().toString(),
               role: 'model',
               text: `I found the service at **${hostname}**.\n\n**Name:** ${type} Agent (${hostname})\n**Description:** Automated agent synchronized from ${address}. This agent inherits capabilities from the source ${type} service.\n\nWould you like to continue with more guidance or create this agent immediately?`,
-              timestamp: new Date()
+              timestamp: new Date(),
+              suggestions: [],
             }]);
           } else if (call.name === 'create_agent') {
             const agentData = call.args as Record<string, unknown>;
@@ -97,7 +98,8 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
               id: Date.now().toString(),
               role: 'model',
               text: `✨ **Agent Created!** I've successfully forged **${newAgent.name}** (Code: ${newAgent.code}). Redirecting you to the details...`,
-              timestamp: new Date()
+              timestamp: new Date(),
+              suggestions: [],
             }]);
 
             setTimeout(() => onAgentCreated(newAgent), 1500);
@@ -125,7 +127,8 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
                 id: Date.now().toString(),
                 role: 'model',
                 text: `✅ **Agent Updated!** I've applied the changes to **${updatedAgent.name}**.`,
-                timestamp: new Date()
+                timestamp: new Date(),
+                suggestions: [],
               }]);
 
               setTimeout(() => onAgentUpdated(updatedAgent), 1500);
@@ -137,7 +140,8 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
           id: (Date.now() + 1).toString(),
           role: 'model',
           text: response.text,
-          timestamp: new Date()
+          timestamp: new Date(),
+          suggestions: response.suggestions || [],
         }]);
       }
     } catch (error) {
@@ -203,7 +207,9 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
         ref={scrollRef}
         className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth"
       >
-        {messages.map((msg) => (
+        {messages.map((msg) => {
+          const suggestions = msg.suggestions || [];
+          return (
           <div
             key={msg.id}
             className={cn(
@@ -229,8 +235,26 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
                 </ReactMarkdown>
               </div>
             </div>
+            {suggestions.length > 0 && (
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex flex-wrap gap-1.5 ml-10"
+              >
+                {suggestions.map((label, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleQuickReply(label)}
+                    className="px-3 py-1 bg-indigo-50 border border-indigo-200 text-indigo-600 rounded-full text-xs font-medium hover:bg-indigo-100 hover:border-indigo-300 transition-all active:scale-95"
+                  >
+                    {label}
+                  </button>
+                ))}
+              </motion.div>
+            )}
           </div>
-        ))}
+        );
+        })}
 
         {/* Quick Options for Agent Type */}
         {showTypeOptions && !isLoading && (
