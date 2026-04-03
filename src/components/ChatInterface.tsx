@@ -13,38 +13,37 @@ interface ChatInterfaceProps {
   editingAgent?: Agent | null;
 }
 
+interface ChatSession {
+  messages: Array<{ role: string; content: string }>;
+  systemInstruction: string;
+  sendMessage: (input: { message: string }) => Promise<{ text?: string; functionCalls?: Array<{ name: string; args: Record<string, unknown> }> }>;
+}
+
 export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose, editingAgent }: ChatInterfaceProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const chatRef = useRef<any>(null);
+  const chatRef = useRef<ChatSession | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const initChat = async () => {
-      if (editingAgent) {
-        setMessages([
-          {
-            id: '1',
-            role: 'model',
-            text: `I'm ready to help you edit **${editingAgent.name}**. What would you like to change? (e.g., "Update the description", "Add a tag", or "Change the timeout")`,
-            timestamp: new Date()
-          }
-        ]);
-        chatRef.current = await startAgentEditChat(editingAgent);
-      } else {
-        setMessages([
-          {
-            id: '1',
-            role: 'model',
-            text: "Hello! I'm your Agent Forge Guide. I'll help you design your custom AI agent. What kind of agent do you have in mind today?",
-            timestamp: new Date()
-          }
-        ]);
-        chatRef.current = await startAgentCreationChat();
-      }
-    };
-    initChat();
+    if (editingAgent) {
+      setMessages([{
+        id: '1',
+        role: 'model',
+        text: `I'm ready to help you edit **${editingAgent.name}**. What would you like to change? (e.g., "Update the description", "Add a tag", or "Change the timeout")`,
+        timestamp: new Date()
+      }]);
+      chatRef.current = startAgentEditChat(editingAgent);
+    } else {
+      setMessages([{
+        id: '1',
+        role: 'model',
+        text: "Hello! I'm your Agent Forge Guide. I'll help you design your custom AI agent. What kind of agent do you have in mind today?",
+        timestamp: new Date()
+      }]);
+      chatRef.current = startAgentCreationChat();
+    }
   }, [editingAgent]);
 
   useEffect(() => {
@@ -54,7 +53,7 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
   }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !chatRef.current) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -69,70 +68,56 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
 
     try {
       const response = await chatRef.current.sendMessage({ message: input });
-      
-      if (response.functionCalls) {
+
+      if (response.functionCalls?.length) {
         for (const call of response.functionCalls) {
           if (call.name === 'fetch_address_info') {
-            const { address, type } = call.args as any;
-            
+            const { address, type } = call.args as { address: string; type: string };
+
             let hostname = address;
             try {
               const urlToParse = address.includes('://') ? address : `https://${address}`;
               hostname = new URL(urlToParse).hostname;
-            } catch (e) {}
-
-            const fetchedInfo = {
-              name: `${type} Agent (${hostname})`,
-              description: `Automated agent synchronized from ${address}. This agent inherits capabilities from the source ${type} service.`,
-              icon: type === 'Dify' ? 'Zap' : 'Brain'
-            };
-            
-            const toolResponse = await chatRef.current.sendMessage({
-              message: `I've detected the following info from ${address}: 
-              Name: ${fetchedInfo.name}
-              Description: ${fetchedInfo.description}
-              
-              Would you like to continue with more guidance or create this agent immediately?`
-            });
+            } catch {}
 
             setMessages(prev => [...prev, {
               id: Date.now().toString(),
               role: 'model',
-              text: toolResponse.text || "Info fetched. What's next?",
+              text: `I found the service at **${hostname}**.\n\n**Name:** ${type} Agent (${hostname})\n**Description:** Automated agent synchronized from ${address}. This agent inherits capabilities from the source ${type} service.\n\nWould you like to continue with more guidance or create this agent immediately?`,
               timestamp: new Date()
             }]);
           } else if (call.name === 'create_agent') {
-            const agentData = call.args as any;
+            const agentData = call.args as Record<string, unknown>;
             const newAgent: Agent = {
               ...agentData,
               createdAt: new Date().toISOString()
-            };
-            
+            } as Agent;
+
             setMessages(prev => [...prev, {
               id: Date.now().toString(),
               role: 'model',
               text: `✨ **Agent Created!** I've successfully forged **${newAgent.name}** (Code: ${newAgent.code}). Redirecting you to the details...`,
               timestamp: new Date()
             }]);
-            
+
             setTimeout(() => onAgentCreated(newAgent), 1500);
           } else if (call.name === 'update_agent') {
-            const updateData = call.args as any;
+            const updateData = call.args as Record<string, unknown>;
             if (editingAgent) {
               const updatedAgent: Agent = {
                 ...editingAgent,
                 ...updateData,
                 meta: {
                   ...editingAgent.meta,
-                  ...(updateData.meta || {})
+                  ...((updateData.meta as Record<string, unknown>) || {})
                 },
                 agent_config: {
                   ...editingAgent.agent_config,
-                  ...(updateData.agent_config || {})
+                  ...((updateData.agent_config as Record<string, unknown>) || {})
                 },
                 config: {
                   ...(editingAgent.config || {}),
-                  ...(updateData.config || {})
+                  ...((updateData.config as Record<string, unknown>) || {})
                 }
               };
 
@@ -147,14 +132,13 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
             }
           }
         }
-      } else {
-        const modelMessage: Message = {
+      } else if (response.text) {
+        setMessages(prev => [...prev, {
           id: (Date.now() + 1).toString(),
           role: 'model',
-          text: response.text || "I'm sorry, I couldn't process that.",
+          text: response.text,
           timestamp: new Date()
-        };
-        setMessages(prev => [...prev, modelMessage]);
+        }]);
       }
     } catch (error) {
       console.error("Chat error:", error);
@@ -171,20 +155,19 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
 
   const handleQuickReply = (text: string) => {
     setInput(text);
-    // We use a timeout to ensure the state update is processed before handleSend
     setTimeout(() => {
       const btn = document.getElementById('chat-send-btn');
       btn?.click();
     }, 0);
   };
 
-  const showTypeOptions = !editingAgent && (messages.length === 1 || 
-    (messages[messages.length - 1]?.role === 'model' && 
-     (messages[messages.length - 1]?.text.toLowerCase().includes('type') || 
+  const showTypeOptions = !editingAgent && (messages.length === 1 ||
+    (messages[messages.length - 1]?.role === 'model' &&
+     (messages[messages.length - 1]?.text.toLowerCase().includes('type') ||
       messages[messages.length - 1]?.text.toLowerCase().includes('kind of agent'))));
 
   return (
-    <motion.div 
+    <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 20 }}
@@ -207,7 +190,7 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
             </p>
           </div>
         </div>
-        <button 
+        <button
           onClick={onClose}
           className="p-2 hover:bg-slate-200 rounded-full transition-colors text-slate-400 hover:text-slate-600"
         >
@@ -216,12 +199,12 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
       </div>
 
       {/* Messages */}
-      <div 
+      <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto p-6 space-y-6 scroll-smooth"
       >
         {messages.map((msg) => (
-          <div 
+          <div
             key={msg.id}
             className={cn(
               "flex gap-4 max-w-[85%]",
@@ -236,8 +219,8 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
             </div>
             <div className={cn(
               "px-4 py-3 rounded-2xl text-sm leading-relaxed",
-              msg.role === 'user' 
-                ? "bg-indigo-600 text-white rounded-tr-none" 
+              msg.role === 'user'
+                ? "bg-indigo-600 text-white rounded-tr-none"
                 : "bg-slate-100 text-slate-800 rounded-tl-none"
             )}>
               <div className="prose prose-sm max-w-none prose-p:leading-relaxed prose-pre:bg-slate-800 prose-pre:text-white">
@@ -248,10 +231,10 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
             </div>
           </div>
         ))}
-        
+
         {/* Quick Options for Agent Type */}
         {showTypeOptions && !isLoading && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             className="flex flex-wrap gap-2 ml-12"
@@ -302,7 +285,7 @@ export default function ChatInterface({ onAgentCreated, onAgentUpdated, onClose,
           </button>
         </div>
         <p className="mt-2 text-[10px] text-center text-slate-400 uppercase tracking-wider font-medium">
-          Powered by Gemini 3 Flash
+          Powered by Cloudflare Workers AI
         </p>
       </div>
     </motion.div>

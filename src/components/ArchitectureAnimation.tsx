@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { Bot, Server, Workflow, Cpu, ShieldCheck, Cog, HardDrive, MousePointerClick, RotateCcw } from 'lucide-react';
 import { cn } from '../lib/utils';
 
