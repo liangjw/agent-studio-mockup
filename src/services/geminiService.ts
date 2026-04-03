@@ -28,6 +28,7 @@ interface ToolCall {
 
 interface ChatResponse {
   text?: string;
+  suggestions?: string[];
   functionCalls?: ToolCall[];
 }
 
@@ -165,7 +166,7 @@ async function chatWithWorker(
     // Not a tool call, return as text
   }
 
-  return { text: data.response };
+  return { text: data.response, suggestions: Array.isArray(data.suggestions) ? data.suggestions : [] };
 }
 
 export function startAgentCreationChat(): ChatSession {
