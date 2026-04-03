@@ -1,6 +1,7 @@
 export interface Env {
-  AI: Ai;
   ASSETS: { fetch: typeof fetch };
+  CF_ACCOUNT_ID: string;
+  CF_API_TOKEN: string;
 }
 
 interface ChatRequest {
@@ -31,50 +32,52 @@ FOR EDITING:
 
 Be helpful and concise.`;
 
-// Map frontend tool names to CF-compatible names
-const TOOL_MAP: Record<string, string> = {
-  fetch_address_info: 'fetch_address_info',
-  create_agent: 'create_agent',
-  update_agent: 'update_agent',
-};
-
-function buildPrompt(messages: Array<{ role: string; content: string }>, systemInstruction?: string): string {
-  let prompt = systemInstruction || SYSTEM_PROMPT;
-  for (const msg of messages) {
-    const role = msg.role === 'user' ? 'User' : 'Assistant';
-    prompt += `\n\n${role}: ${msg.content}`;
-  }
-  prompt += '\n\nAssistant:';
-  return prompt;
-}
-
 async function handleChat(request: Request, env: Env): Promise<Response> {
   try {
     const body = (await request.json()) as ChatRequest;
     const { messages, systemInstruction } = body;
 
-    // Call Cloudflare AI - use llama model with tools support via system prompt
-    const aiResult = await Promise.race([
-      env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-        messages: [
-          { role: 'system', content: systemInstruction || SYSTEM_PROMPT },
-          ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : m.role, content: m.content })),
-        ],
-        max_tokens: 256,
-      }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('AI request timed out after 10s')), 10_000)
-      ),
-    ]) as { response?: string };
-    const aiResponse = aiResult;
+    const accountId = env.CF_ACCOUNT_ID;
+    const apiToken = env.CF_API_TOKEN;
+    if (!accountId || !apiToken) {
+      return new Response(JSON.stringify({ error: 'CF_ACCOUNT_ID or CF_API_TOKEN not configured' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-    return new Response(JSON.stringify({
-      response: aiResponse?.response || '',
-    }), {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
+
+    const cfResponse = await fetch(
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/@cf/meta/llama-3-8b-instruct`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [
+            { role: 'system', content: systemInstruction || SYSTEM_PROMPT },
+            ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : m.role, content: m.content })),
+          ],
+          max_tokens: 256,
+        }),
+        signal: controller.signal,
+      }
+    );
+    clearTimeout(timeout);
+
+    const data = await cfResponse.json() as { result?: { response?: string }; errors?: unknown[] };
+    const responseText = data?.result?.response || '';
+
+    return new Response(JSON.stringify({ response: responseText }), {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
-    return new Response(JSON.stringify({ error: String(err) }), {
+    const message = err instanceof Error ? err.message : String(err);
+    return new Response(JSON.stringify({ error: message }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
     });

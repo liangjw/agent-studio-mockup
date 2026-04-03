@@ -3,8 +3,5 @@ main = "src/index.ts"
 compatibility_date = "2025-04-03"
 assets = { directory = "dist" }
 
-[ai]
-binding = "AI"
-
 [observability]
 enabled = true
