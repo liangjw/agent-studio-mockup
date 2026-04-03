@@ -180,7 +180,7 @@ export function startAgentCreationChat(): ChatSession {
       const response = await chatWithWorker(messages, systemWithTools);
       const text = response.text || (response.functionCalls?.length ? '' : '');
       if (text) {
-        messages.push({ role: 'model', content: text });
+        messages.push({ role: 'assistant', content: text });
       }
       return response;
     },
@@ -201,7 +201,7 @@ export function startAgentEditChat(currentAgent: Agent): ChatSession {
       const response = await chatWithWorker(messages, systemWithTools);
       const text = response.text || (response.functionCalls?.length ? '' : '');
       if (text) {
-        messages.push({ role: 'model', content: text });
+        messages.push({ role: 'assistant', content: text });
       }
       return response;
     },
