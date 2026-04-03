@@ -32,6 +32,13 @@ FOR EDITING:
 
 Be helpful and concise.`;
 
+const SUGGESTION_SUFFIX = `
+
+IMPORTANT: After your response text, you MUST append EXACTLY this marker and a JSON array of 1-4 short Chinese button labels (max 6 characters each) representing the user's likely next actions. Do NOT use any other marker. The array MUST be valid JSON. If no good suggestions, use an empty array.
+
+###SUGGESTIONS
+["选项1", "选项2", "选项3"]`;
+
 async function handleChat(request: Request, env: Env): Promise<Response> {
   try {
     const body = (await request.json()) as ChatRequest;
@@ -59,7 +66,7 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
         },
         body: JSON.stringify({
           messages: [
-            { role: 'system', content: systemInstruction || SYSTEM_PROMPT },
+            { role: 'system', content: (systemInstruction || SYSTEM_PROMPT) + SUGGESTION_SUFFIX },
             ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : m.role, content: m.content })),
           ],
           max_tokens: 256,
@@ -72,7 +79,22 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
     const data = await cfResponse.json() as { result?: { response?: string }; errors?: unknown[] };
     const responseText = data?.result?.response || '';
 
-    return new Response(JSON.stringify({ response: responseText }), {
+    let suggestions: string[] = [];
+    let displayText = responseText;
+
+    const markerMatch = responseText.match(/###SUGGESTIONS\s*([\s\S]+)$/);
+    if (markerMatch) {
+      displayText = responseText.substring(0, markerMatch.index).trim();
+      try {
+        suggestions = JSON.parse(markerMatch[1].trim()) as string[];
+        suggestions = suggestions.slice(0, 4).map(s => s.substring(0, 6));
+      } catch {
+        console.error('Failed to parse suggestions:', markerMatch[1]);
+        suggestions = [];
+      }
+    }
+
+    return new Response(JSON.stringify({ response: displayText, suggestions }), {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
