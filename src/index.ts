@@ -53,17 +53,20 @@ async function handleChat(request: Request, env: Env): Promise<Response> {
     const body = (await request.json()) as ChatRequest;
     const { messages, systemInstruction } = body;
 
-    // Build the Llama-compatible prompt
-    const prompt = buildPrompt(messages, systemInstruction);
-
     // Call Cloudflare AI - use llama model with tools support via system prompt
-    const aiResponse = await env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
-      messages: [
-        { role: 'system', content: systemInstruction || SYSTEM_PROMPT },
-        ...messages.map(m => ({ role: m.role, content: m.content })),
-      ],
-      max_tokens: 512,
-    }) as { response?: string };
+    const aiResult = await Promise.race([
+      env.AI.run('@cf/meta/llama-3.1-8b-instruct', {
+        messages: [
+          { role: 'system', content: systemInstruction || SYSTEM_PROMPT },
+          ...messages.map(m => ({ role: m.role === 'model' ? 'assistant' : m.role, content: m.content })),
+        ],
+        max_tokens: 256,
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('AI request timed out after 10s')), 10_000)
+      ),
+    ]) as { response?: string };
+    const aiResponse = aiResult;
 
     return new Response(JSON.stringify({
       response: aiResponse?.response || '',
