@@ -5,3 +5,7 @@ assets = { directory = "dist" }
 
 [observability]
 enabled = true
+
+# Environment variables (set in Worker Settings → Environment Variables):
+# CF_ACCOUNT_ID   = "1b9e0ecaf3e47a93cac9513c53b2ca75"
+# CF_API_TOKEN    = your Cloudflare API token ( Workers AI permission)
